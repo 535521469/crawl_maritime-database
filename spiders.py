@@ -9,6 +9,7 @@ from scrapy.http.request import Request
 from scrapy.http.response import Response
 from scrapy.selector import HtmlXPathSelector
 from scrapy.spider import BaseSpider
+import datetime
 import itertools
 import os
 
@@ -16,7 +17,7 @@ class MaritimeSpider(BaseSpider):
     
     name = u'MaritimeSpider'
     
-    home_page = u"http://www.maritime-database.com/"
+    home_page = u"http://www.maritime-database.com"
     index_page = u'%s/index.php' % home_page
 
     def get_next_proxy(self, cookies):
@@ -25,32 +26,90 @@ class MaritimeSpider(BaseSpider):
 class ShippingSpider(MaritimeSpider):
     
     name = u'ShippingSpider'
-#    DOWNLOAD_DELAY = 1
     
     def start_requests(self):
         cookies = build_cookies(self)
-#        yield self.make_requests_from_url()
-        
         file_dir = os.getcwd()
         
         sub_dir = os.sep.join(['ship', 'shipping'])
         
+        x = 0
         for fn_item in os.walk(sub_dir):
             for fn in fn_item[2]:
+                self.source = fn.split(u' - ')[0]
                 file_path = os.sep.join([file_dir, sub_dir, fn])
                 response = Response(file_path, body=''.join(open(file_path, u'r').readlines()))
                 response.body_as_unicode = lambda :response.body
                 hxs = HtmlXPathSelector(response)
-                a_tags = hxs.select('//table[@class="text2"]//a')
-                print len(a_tags)
-#                for a_tag in a_tags:
-#                    print a_tag.select('@href').extract()[0], a_tag.select('text()').extract()[0]
-            break
+                a_tags = hxs.select('//table[@class="text2"]//a[@class="links2"]')
+                for a_tag in a_tags:
+                    detail_url = a_tag.select('@href').extract()[0]
+                    try:
+                        title = a_tag.select('text()').extract()[0]
+                    except Exception as e:
+                        continue
+                    yield Request(self.home_page + detail_url, self.parse, cookies=cookies)
+        
+        print x
+
+    def parse(self, response):
+        
+        hxs = HtmlXPathSelector(response)
+        
+        td_tag = hxs.select(u'//table[@class="txt"]/tr[2]/td[2]')
+        mi = MaritimeItem()
+        mi[ItemConst.url] = response.url
+        mi[ItemConst.source] = self.source
+        for idx, b_tag in enumerate(td_tag.select(u'b')):
+            current_b_val = b_tag.select(u'text()').extract()[0]
+            if idx == 0:
+                mi[ItemConst.Company] = current_b_val.strip()
+                continue
+            
+            all_txt = b_tag.select('parent::td/*/text() | parent::td/text()').extract()
+            try:
+                next_b_val = b_tag.select('following::b[1]/text()').extract()[0]
+                vals = all_txt[all_txt.index(current_b_val) + 1:all_txt.index(next_b_val)]
+            except IndexError as ie:
+                vals = all_txt[all_txt.index(current_b_val) + 1:]
                 
-#        yield Request('%s?page=%s' % (self.index_page, page_no),
-#                      self.parse, cookies=cookies,
-#                      meta={u'proxy':cookies[u'proxies'].next()},
-#                      )
+            val = u' '.join(map(lambda x:x.replace(u':\n', u'')
+                                .replace(u': ', u'').strip(), vals))
+            
+            cur_b_val = current_b_val.strip()
+            if cur_b_val == ItemConst.Activity:
+                mi[ItemConst.Activity] = val.strip()
+            elif cur_b_val == ItemConst.Address:
+                mi[ItemConst.Address] = val.strip()
+            elif cur_b_val == u'AOH phone':
+                mi[ItemConst.AOH_phone] = val.strip()
+            elif cur_b_val == ItemConst.Contact:
+                mi[ItemConst.Contact] = val.strip().replace(u'\n', u'')
+            elif cur_b_val == ItemConst.Country:
+                mi[ItemConst.Country] = val.strip()
+            elif cur_b_val == ItemConst.Fax:
+                mi[ItemConst.Fax] = val.strip()
+            elif cur_b_val == ItemConst.Phone:
+                mi[ItemConst.Phone] = val.strip()
+            elif cur_b_val == ItemConst.State:
+                mi[ItemConst.State] = val.strip()
+            elif cur_b_val == ItemConst.Town:
+                mi[ItemConst.Town] = val.strip()
+            elif cur_b_val == ItemConst.Website:
+                mi[ItemConst.Website] = val.strip()
+            elif cur_b_val == ItemConst.Zipcode:
+                mi[ItemConst.Zipcode] = val.strip()
+            else:
+                with open(u'extends%s.txt' % self.source, u'a') as f:
+                    f.write(u'%s - - %s\n' % (cur_b_val, response.url))
+        
+        with open(u'fetched_%s.txt' % self.source, u'a') as f:
+            f.write(u'%s - %s\n' % (datetime.datetime.now(), response.url))
+        
+        self.log(u"fetch %s" % response.url, log.INFO)
+        
+        yield mi
+            
 
 #    def parse(self, response):
 #        

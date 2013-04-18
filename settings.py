@@ -7,8 +7,8 @@ Created on 2013-4-15
 BOT_NAME = 'ShippingSpider'
 #SPIDER_MODULES = ['crawler.shc.fe.spiders_picture']
 SPIDER_MODULES = ['spiders']
-LOG_LEVEL = 'DEBUG'
-DOWNLOAD_DELAY = 0.3
+LOG_LEVEL = 'INFO'
+#DOWNLOAD_DELAY = 0.3
 LOG_ENCODING = u'UTF-8'
 #LOG_FILE = u'fetch.log'
 
